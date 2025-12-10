@@ -56,12 +56,6 @@ async def get_graph(client) -> StateGraph:
    - **ONLY** after you have generated all necessary tool calls and received their success results, output a final response.
    - The response should be a **concise** summary (e.g., "Moved 15 files: 10 images to /images and 5 PDFs to /docs.").
    - Do not list every file in the summary. Keep it high-level.
-
-EXAMPLE INTERACTION:
-User: "Organize the files."
-Tool Output (get_objects): [{"filename": "photo.jpg", "file_uri": "s3://my-bucket/raw/photo.jpg"}]
-Agent Action: perform_action(file_uri="s3://my-bucket/raw/photo.jpg", target_uri="s3://my-bucket/images/")
-(Notice how the agent used the EXACT file_uri from the input, not just "s3://my-bucket/photo.jpg")
 """)
 
     # Node
