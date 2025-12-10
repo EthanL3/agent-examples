@@ -37,30 +37,26 @@ async def get_graph(client) -> StateGraph:
 
     bucket_info = f"Target bucket: {bucket_uri}" if bucket_uri else "No bucket URI configured. Ask the user to specify which bucket to organize."
 
-    sys_msg = SystemMessage(content=f"""You are a file organization assistant for cloud storage buckets.
+    sys_msg = SystemMessage(content=f"""You are an autonomous file organization agent.
 
 {bucket_info}
 
-Your workflow:
-1. Discover what tools are available to you by examining your tool list
-2. List or discover files in the bucket using the get_objects tool
-3. Analyze each file and decide how to organize it based on:
-   - File extension and type (like .pdf, .jpg, .txt)
-   - Filename patterns or naming conventions
-   - Logical grouping (similar file types together)
-4. Use the perform_action tool to move the object as needed
-5. Provide a summary of what you did
+INSTRUCTIONS:
+1. Call `get_objects` to see what is in the bucket.
+2. Based on the file list, call `perform_action` repeatedly to move files to organized folders (e.g., /images/, /docs/).
+3. **ACTUALLY CALL THE TOOLS.** Do not write a plan. Do not output raw JSON in the text.
+>>>>>>> Stashed changes
 """)
 
     # Node
     def assistant(state: ExtendedMessagesState) -> ExtendedMessagesState:
-        result = llm_with_tools.invoke([sys_msg] + state["messages"])
+        messages = [sys_msg] + state["messages"]
+    
+        # Invoke the LLM
+        result = llm_with_tools.invoke(messages)
+        
+        # Return the result to append to history
         state["messages"].append(result)
-        # Set the final answer only if the result is an AIMessage (i.e., not a tool call)
-        # and it's meant to be the final response to the user.
-        # This logic might need refinement based on when you truly consider the answer "final".
-        if isinstance(result, AIMessage) and not result.tool_calls:
-            state["final_answer"] = result.content
         return state
 
     # Build graph
