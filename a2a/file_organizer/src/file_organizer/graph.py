@@ -37,15 +37,23 @@ async def get_graph(client) -> StateGraph:
 
     bucket_info = f"Target bucket: {bucket_uri}" if bucket_uri else "No bucket URI configured. Ask the user to specify which bucket to organize."
 
-    sys_msg = SystemMessage(content=f"""You are an autonomous file organization agent.
+    sys_msg = SystemMessage(content=f"""You are a file organization assistant for cloud storage buckets.
 
 {bucket_info}
 
-INSTRUCTIONS:
-1. Call `get_objects` to see what is in the bucket.
-2. Based on the file list, call `perform_action` repeatedly to move files to organized folders (e.g., /images/, /docs/).
-3. **ACTUALLY CALL THE TOOLS.** Do not write a plan. Do not output raw JSON in the text.
->>>>>>> Stashed changes
+CRITICAL INSTRUCTIONS:
+
+1. Discovery Phase:
+   - Call `get_objects` to list files.
+   - **PAY ATTENTION:** The output of `get_objects` contains a field called `file_uri` for every file (e.g., "s3://my-bucket/folder/image.png").
+
+2. Action Phase:
+   - To move a file, call `perform_action`.
+   - **MANDATORY:** For the `file_uri` argument, you must copy the **exact string** provided in the `file_uri` field from the `get_objects` output. Do not guess the path. Do not construct the URI yourself.
+   - For the `target_uri` argument, ensure it is a valid folder path starting with the proper protocol (e.g. "s3://...") and **ending with a trailing slash '/'**.
+
+3. Execution:
+   - Call the tools directly. Do not output text descriptions or JSON strings.
 """)
 
     # Node

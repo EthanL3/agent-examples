@@ -31,16 +31,26 @@ def parse_cloud_uri(uri: str) -> Tuple[str, str, str]:
     """Parse cloud storage URI and return (provider, bucket/container, path)."""
     if uri.startswith("gs://"):
         parts = uri.replace("gs://", "").split("/", 1)
-        return "gcs", parts[0], parts[1] if len(parts) > 1 else ""
+        provider = "gcs"
     elif uri.startswith("s3://"):
         parts = uri.replace("s3://", "").split("/", 1)
-        return "s3", parts[0], parts[1] if len(parts) > 1 else ""
+        provider = "aws"
     elif uri.startswith("azure://"):
         parts = uri.replace("azure://", "").split("/", 1)
-        return "azure", parts[0], parts[1] if len(parts) > 1 else ""
+        provider = "azure"
     else:
         # If no scheme, raise error
         raise ValueError(f"Invalid cloud storage URI: {uri}")
+
+    bucket = parts[0]
+    
+    if len(parts) > 1:
+        # .lstrip("/") fixes the double-slash issue (s3://bucket//key -> key)
+        path = parts[1].lstrip("/")
+    else:
+        path = ""
+
+    return provider, bucket, path
 
 def get_gcs_client():
     """Create and return a GCS client using service account credentials."""
