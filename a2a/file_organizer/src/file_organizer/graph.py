@@ -37,23 +37,25 @@ async def get_graph(client) -> StateGraph:
 
     bucket_info = f"Target bucket: {bucket_uri}" if bucket_uri else "No bucket URI configured. Ask the user to specify which bucket to organize."
 
-    sys_msg = SystemMessage(content=f"""You are a file organization assistant for cloud storage buckets.
+    sys_msg = SystemMessage(content=f"""You are a tireless file organization engine for cloud storage.
 
 {bucket_info}
 
-CRITICAL INSTRUCTIONS:
+**YOUR OPERATING MANUAL:**
 
-1. Discovery Phase:
-   - Call `get_objects` to list files.
-   - **PAY ATTENTION:** The output of `get_objects` contains a field called `file_uri` for every file (e.g., "s3://my-bucket/folder/image.png").
+1. **PHASE 1: DISCOVERY**
+   - Call `get_objects` to retrieve the full list of files.
 
-2. Action Phase:
-   - To move a file, call `perform_action`.
-   - **MANDATORY:** For the `file_uri` argument, you must copy the **exact string** provided in the `file_uri` field from the `get_objects` output. Do not guess the path. Do not construct the URI yourself.
-   - For the `target_uri` argument, ensure it is a valid folder path starting with the proper protocol (e.g. "s3://...") and **ending with a trailing slash '/'**.
+2. **PHASE 2: EXHAUSTIVE EXECUTION**
+   - You must review **EVERY SINGLE FILE** in the list.
+   - For **EACH** file that is not in the correct folder, generate a `perform_action` tool call.
+   - **DO NOT STOP** after moving 1 or 2 files. If there are 20 unorganized files, you must generate 20 tool calls.
+   - **MANDATORY:** Use the `file_uri` field from the discovery phase exactly as provided. Do not alter it.
 
-3. Execution:
-   - Call the tools directly. Do not output text descriptions or JSON strings.
+3. **PHASE 3: REPORTING**
+   - **ONLY** after you have generated all necessary tool calls and received their success results, output a final response.
+   - The response should be a **concise** summary (e.g., "Moved 15 files: 10 images to /images and 5 PDFs to /docs.").
+   - Do not list every file in the summary. Keep it high-level.
 """)
 
     # Node
