@@ -54,64 +54,52 @@ def parse_cloud_uri(uri: str) -> Tuple[str, str, str]:
 
 def get_gcs_client():
     """Create and return a GCS client using service account credentials."""
-    try:
-        if GCP_SERVICE_ACCOUNT_KEY is None:
-            logger.error("GCP_SERVICE_ACCOUNT_KEY environment variable not set")
-            return None
-        
-        # Parse service account key from JSON string or file path
-        if GCP_SERVICE_ACCOUNT_KEY.startswith("{"):
-            # It's a JSON string
-            credentials_info = json.loads(GCP_SERVICE_ACCOUNT_KEY)
-            credentials = service_account.Credentials.from_service_account_info(credentials_info)
-        else:
-            # It's a file path
-            credentials = service_account.Credentials.from_service_account_file(GCP_SERVICE_ACCOUNT_KEY)
-        
-        client = storage.Client(credentials=credentials, project=GCP_PROJECT_ID)
-        logger.info("Successfully authenticated with GCP")
-        return client
-    except Exception as e:
-        logger.error(f"Error authenticating with GCP: {e}")
+    if GCP_SERVICE_ACCOUNT_KEY is None:
+        logger.error("GCP_SERVICE_ACCOUNT_KEY environment variable not set")
         return None
+    
+    # Parse service account key from JSON string or file path
+    if GCP_SERVICE_ACCOUNT_KEY.startswith("{"):
+        # It's a JSON string
+        credentials_info = json.loads(GCP_SERVICE_ACCOUNT_KEY)
+        credentials = service_account.Credentials.from_service_account_info(credentials_info)
+    else:
+        # It's a file path
+        credentials = service_account.Credentials.from_service_account_file(GCP_SERVICE_ACCOUNT_KEY)
+    
+    client = storage.Client(credentials=credentials, project=GCP_PROJECT_ID)
+    logger.info("Successfully authenticated with GCP")
+    return client
 
 def get_s3_client():
     """Create and return an S3 client using AWS credentials."""
-    try:
-        if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
-            client = boto3.client(
-                's3',
-                aws_access_key_id=AWS_ACCESS_KEY_ID,
-                aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-                region_name=AWS_REGION
-            )
-        else:
-            # Use default credentials (IAM role, environment, etc.)
-            client = boto3.client('s3', region_name=AWS_REGION)
-        
-        logger.info("Successfully authenticated with AWS S3")
-        return client
-    except Exception as e:
-        logger.error(f"Error authenticating with AWS S3: {e}")
-        return None
+    if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
+        client = boto3.client(
+            's3',
+            aws_access_key_id=AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+            region_name=AWS_REGION
+        )
+    else:
+        # Use default credentials (IAM role, environment, etc.)
+        client = boto3.client('s3', region_name=AWS_REGION)
+    
+    logger.info("Successfully authenticated with AWS S3")
+    return client
 
 def get_azure_blob_service_client():
     """Create and return an Azure Blob Service client."""
-    try:
-        if AZURE_STORAGE_CONNECTION_STRING:
-            client = BlobServiceClient.from_connection_string(AZURE_STORAGE_CONNECTION_STRING)
-        elif AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_ACCOUNT_KEY:
-            account_url = f"https://{AZURE_STORAGE_ACCOUNT_NAME}.blob.core.windows.net"
-            client = BlobServiceClient(account_url=account_url, credential=AZURE_STORAGE_ACCOUNT_KEY)
-        else:
-            logger.error("Azure credentials not configured")
-            return None
-        
-        logger.info("Successfully authenticated with Azure Blob Storage")
-        return client
-    except Exception as e:
-        logger.error(f"Error authenticating with Azure Blob Storage: {e}")
+    if AZURE_STORAGE_CONNECTION_STRING:
+        client = BlobServiceClient.from_connection_string(AZURE_STORAGE_CONNECTION_STRING)
+    elif AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_ACCOUNT_KEY:
+        account_url = f"https://{AZURE_STORAGE_ACCOUNT_NAME}.blob.core.windows.net"
+        client = BlobServiceClient(account_url=account_url, credential=AZURE_STORAGE_ACCOUNT_KEY)
+    else:
+        logger.error("Azure credentials not configured")
         return None
+    
+    logger.info("Successfully authenticated with Azure Blob Storage")
+    return client
 
 def list_objects_unified(provider: str, bucket_or_container: str) -> List[Dict[str, Any]]:
     """List objects from any cloud provider."""
@@ -300,24 +288,24 @@ def get_objects(bucket_uri: str) -> str:
         
         # Get the raw list of objects
         objects = list_objects_unified(provider, bucket_name)
-        
+        simple_objects = []
         # Loop through and enrich each object with the full file_uri
         for obj in objects:
             # This assumes your list_objects_unified returns dicts
             # and that the object key is stored in the 'name' field.
             # Adjust 'name' if your key is stored differently (e.g., 'key')
             if 'name' in obj:
-                obj['file_uri'] = f"{provider}://{bucket_name}/{obj['name']}"
+                simple_objects.append({
+                    "filename": obj['name'],  # Visual name for the agent
+                    "file_uri": obj['file_uri'] # The exact string it MUST use
+                })
             else:
                 logger.warning(f"Object {obj} missing 'name' key, cannot construct file_uri")
 
         logger.debug(f"Successfully retrieved and processed {len(objects)} objects from {provider} bucket '{bucket_name}'")
         
         return json.dumps({
-            "provider": provider,
-            "bucket": bucket_name,
-            "object_count": len(objects),
-            "objects": objects
+            "files": simple_objects
         })
     
     except Exception as e:
@@ -358,7 +346,37 @@ def perform_action(file_uri: str, target_uri: str) -> str:
         full_target_uri = f"{target_provider}://{target_bucket}/{target_path}"
         
         # Perform copy operation
-        copy_object_unified(source_provider, source_bucket, source_path, target_bucket, target_path)
+        try:
+            copy_object_unified(source_provider, source_bucket, source_path, target_bucket, target_path)
+        except Exception as e:
+            if "NoSuchKey" in str(e) or "Not Found" in str(e):
+                logger.info(f"Direct move failed for {source_path}. Searching for file...")
+                
+                s3 = get_s3_client()
+                filename_only = os.path.basename(source_path)
+                
+                # Search the bucket for this filename
+                found_key = None
+                paginator = s3.get_paginator('list_objects_v2')
+                for page in paginator.paginate(Bucket=source_bucket):
+                    for obj in page.get('Contents', []):
+                        if os.path.basename(obj['Key']) == filename_only:
+                            found_key = obj['Key']
+                            break
+                    if found_key: break
+                
+                if found_key:
+                    print(f"Found correct key: {found_key}. Retrying...")
+                    # Update source_path to the one we actually found
+                    source_path = found_key 
+                    # Retry the copy
+                    copy_object_unified(source_provider, source_bucket, source_path, target_bucket, target_path)
+                else:
+                    # Truly doesn't exist
+                    return json.dumps({"error": f"Could not find file '{filename_only}' anywhere in bucket."})
+            else:
+                # Some other error (permission, etc.)
+                raise e
         
         result = {
             "status": "success"
